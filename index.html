@@ -133,7 +133,6 @@ function teamLabel(team, gs){
 }
 
 /* ---------------- Estado de red y juego ---------------- */
-let screen = "home";          // home | lobby | game
 let peer = null;              // instancia PeerJS
 let myId = null;              // peer.id (también identifica al jugador dentro de gameState)
 let isHost = false;
@@ -332,7 +331,6 @@ async function crearPartida(name, numPlayers){
       conn.on("data", (data)=>{ applyAction(conn.peer, data); broadcastState(); });
       conn.on("close", ()=>{ delete dataConns[conn.peer]; applyAction(conn.peer, {type:"leave"}); broadcastState(); });
     });
-    screen = "lobby";
     ensureLocalStream();
     render();
   });
@@ -354,8 +352,6 @@ async function unirsePartida(name, code){
     hostConn.on("data", (data)=>{
       if(data.type==="state"){
         gameState = data.state;
-        if(gameState.phase==="lobby") screen="lobby";
-        else screen="game";
         render();
         maintainAudioMesh();
       }
@@ -378,9 +374,8 @@ async function unirsePartida(name, code){
 
 /* ---------------- Render ---------------- */
 function render(){
-  if(screen==="home") return renderHome();
-  if(!gameState) return app.innerHTML = '<p class="loading">Cargando la mesa…</p>';
-  if(screen==="lobby") return renderLobby();
+  if(!gameState) return renderHome();
+  if(gameState.phase==="lobby") return renderLobby();
   return renderGame();
 }
 
