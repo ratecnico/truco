@@ -250,12 +250,11 @@ function applyAction(senderId, action){
       const card = hand.splice(action.cardIdx,1)[0];
       if(!card) break;
       const me = gs.players.find(p=>p.id===senderId);
-      gs.table.push({playerId:senderId, name: me?me.name:"?", card});
+      gs.table.push({playerId:senderId, name: me?me.name:"?", card, trick: gs.trick});
       gs.log.push({text:(me?me.name:"Alguien")+" jugó "+cardLabel(card)});
       gs.currentTurnIndex = (gs.currentTurnIndex+1) % gs.turnOrder.length;
-      if(gs.table.length === gs.turnOrder.length){
-        gs.trickHistory.push(gs.table);
-        gs.table = [];
+      const jugadasEnBazaActual = gs.table.filter(t=>t.trick===gs.trick).length;
+      if(jugadasEnBazaActual === gs.turnOrder.length){
         if(gs.trick >= 3){
           gs.phase = "handEnded";
           gs.log.push({text:"Terminó la mano. El anfitrión define los tantos y reparte de nuevo."});
@@ -515,10 +514,16 @@ function renderGame(){
 
           <div class="mesa">
             ${gs.table.length===0 && gs.phase==="playing" ? `<p style="font-size:13px; color:rgba(243,233,210,.4);">Esperando la primera carta de esta baza…</p>` : ""}
-            ${gs.table.map(t=>`
-              <div style="display:flex; flex-direction:column; align-items:center;">
-                ${cardHtml(t.card,{playable:false})}
-                <span class="table-card-name">${t.name}</span>
+            ${[1,2,3].filter(n=> gs.table.some(t=>t.trick===n)).map(n=>`
+              <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                <span style="font-size:10px; color:rgba(243,233,210,.55); text-transform:uppercase; letter-spacing:1px;">Baza ${n}</span>
+                <div style="display:flex; gap:10px;">
+                  ${gs.table.filter(t=>t.trick===n).map(t=>`
+                    <div style="display:flex; flex-direction:column; align-items:center;">
+                      ${cardHtml(t.card,{playable:false})}
+                      <span class="table-card-name">${t.name}</span>
+                    </div>`).join("")}
+                </div>
               </div>`).join("")}
           </div>
 
