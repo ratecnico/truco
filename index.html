@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Truco Online</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+  :root{
+    --felt-dark:#0B2B1F; --felt:#123524; --felt-light:#1F5C3D;
+    --wood:#5C3A21; --cream:#F3E9D2; --gold:#C9A227;
+    --teamA:#2E86AB; --teamB:#C1443C; --ink:#2A1E0A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:'Inter',sans-serif;
+    background:linear-gradient(160deg, var(--felt-light) 0%, var(--felt) 55%, var(--felt-dark) 100%);
+    color:var(--cream);
+  }
+  h1,h2,h3{font-family:'Playfair Display',serif; margin:0;}
+  button{font-family:inherit; cursor:pointer; border:none;}
+  input{font-family:inherit;}
+  #app{min-height:100vh; display:flex; flex-direction:column;}
+
+  .center-screen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;}
+  .panel{
+    width:100%; max-width:440px; background:var(--cream); color:var(--ink);
+    border-radius:18px; padding:32px; box-shadow:0 20px 50px rgba(0,0,0,.35);
+  }
+  .panel h1{font-size:28px; text-align:center; color:var(--felt); margin-bottom:4px;}
+  .panel h2{font-size:22px; text-align:center; color:var(--felt); margin-bottom:16px;}
+  .subtitle{text-align:center; font-size:13px; color:var(--wood); margin-bottom:24px;}
+  label.field-label{display:block; font-size:12px; font-weight:600; color:var(--wood); margin-bottom:4px;}
+  input.field{
+    width:100%; padding:10px 12px; border-radius:10px; border:2px solid var(--gold);
+    margin-bottom:16px; outline:none; font-size:14px;
+  }
+  .num-choice{display:flex; gap:8px; margin-bottom:16px;}
+  .num-choice button{
+    flex:1; padding:10px; border-radius:10px; font-weight:600; border:2px solid var(--felt);
+    background:transparent; color:var(--felt);
+  }
+  .num-choice button.active{background:var(--felt); color:var(--cream);}
+  .btn-gold{width:100%; padding:12px; border-radius:10px; font-weight:700; background:var(--gold); color:var(--ink); margin-bottom:20px;}
+  .btn-outline{width:100%; padding:12px; border-radius:10px; font-weight:700; background:transparent; color:var(--felt); border:2px solid var(--felt);}
+  .divider{display:flex; align-items:center; gap:8px; margin-bottom:16px; font-size:12px; color:var(--wood);}
+  .divider .line{flex:1; height:1px; background:rgba(92,58,33,.3);}
+  .error-text{font-size:12px; color:var(--teamB); margin:-8px 0 8px;}
+  .code-chip{font-family:monospace; letter-spacing:3px; padding:6px 12px; border-radius:10px; background:var(--felt); color:var(--cream); font-size:18px;}
+  .copy-btn{padding:8px; border-radius:10px; border:2px solid var(--wood); background:transparent;}
+  .code-row{display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px;}
+  .hint{text-align:center; font-size:11px; color:var(--wood); margin-bottom:20px;}
+  .player-list{list-style:none; padding:0; margin:0 0 20px;}
+  .player-list li{display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:10px; margin-bottom:4px;}
+  .team-badge{font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; color:#fff;}
+
+  /* GAME SCREEN */
+  .game-wrap{min-height:100vh; padding:16px; display:flex; flex-direction:column; gap:12px;}
+  .topbar{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; background:rgba(0,0,0,.18); border-radius:14px; padding:10px 14px;}
+  .score-block{display:flex; align-items:center; gap:8px;}
+  .score-value{font-family:'Playfair Display',serif; font-size:20px; font-weight:700;}
+  .score-btns button{width:24px; height:24px; font-size:11px; border-radius:6px; margin-left:2px; background:var(--gold); color:var(--ink); font-weight:700;}
+  .score-btns button.neg{background:var(--teamB); color:#fff;}
+  .mic-btn{display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:999px; font-size:12px; font-weight:700; color:#fff;}
+  .mic-on{background:#2E865A;}
+  .mic-off{background:var(--teamB);}
+  .main-area{display:flex; flex-wrap:wrap; gap:12px; flex:1;}
+  .table-area{flex:2; min-width:280px; background:rgba(0,0,0,.15); border-radius:18px; padding:16px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; gap:10px;}
+  .seats{display:flex; flex-wrap:wrap; justify-content:center; gap:8px;}
+  .seat-chip{padding:6px 12px; border-radius:999px; font-size:12px; font-weight:700; display:flex; align-items:center; gap:6px;}
+  .seat-active{background:var(--gold); color:var(--ink);}
+  .seat-idle{background:rgba(243,233,210,.15); color:var(--cream);}
+  .mesa{display:flex; flex-wrap:wrap; gap:14px; justify-content:center; align-items:center; min-height:110px;}
+  .card{width:70px; height:98px; border-radius:10px; border:2px solid var(--cream); display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(0,0,0,.3); transition:transform .15s;}
+  .card.playable:hover{transform:translateY(-6px); cursor:pointer;}
+  .card.disabled{opacity:.55;}
+  .card .emoji{font-size:22px;}
+  .card .val{font-family:'Playfair Display',serif; font-weight:700; font-size:14px;}
+  .card-espada{background:#3B4A5A; color:#F3E9D2;}
+  .card-basto{background:#5C3A21; color:#F3E9D2;}
+  .card-oro{background:#C9A227; color:#2A1E0A;}
+  .card-copa{background:#8B2E2E; color:#F3E9D2;}
+  .table-card-name{font-size:10px; color:var(--cream); margin-top:2px; text-align:center;}
+  .cantos{display:flex; flex-wrap:wrap; justify-content:center; gap:8px;}
+  .canto-btn{padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; background:transparent; border:2px solid var(--cream); color:var(--cream);}
+  .canto-btn:disabled{opacity:.35; cursor:default;}
+  .hand{display:flex; gap:12px; margin-top:6px;}
+  .turn-note{font-size:12px; margin-top:2px;}
+  .new-hand-btn{padding:10px 18px; border-radius:10px; font-weight:700; background:var(--gold); color:var(--ink);}
+  .log-panel{flex:1; min-width:220px; max-width:320px; background:rgba(0,0,0,.15); border-radius:18px; padding:12px; display:flex; flex-direction:column; max-height:460px;}
+  .log-panel h3{font-size:13px; margin-bottom:8px;}
+  .log-list{flex:1; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:6px; padding-right:4px;}
+  .log-list p{font-size:12px; color:rgba(243,233,210,.85); margin:0;}
+  .loading{color:var(--cream); text-align:center; margin-top:40vh;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ---------------- Datos del mazo ---------------- */
+const PALOS = ["espada","basto","oro","copa"];
+const VALORES = [1,2,3,4,5,6,7,10,11,12];
+const NOMBRES_VALOR = {1:"As",2:"2",3:"3",4:"4",5:"5",6:"6",7:"7",10:"Sota",11:"Caballo",12:"Rey"};
+const PALO_LABEL = {espada:"Espada", basto:"Basto", oro:"Oro", copa:"Copa"};
+const PALO_EMOJI = {espada:"⚔️", basto:"🌳", oro:"🪙", copa:"🍷"};
+const CANTOS = ["Envido","Real envido","Falta envido","Truco","Retruco","Vale cuatro","Quiero","No quiero"];
+
+function buildDeck(){
+  const deck=[];
+  PALOS.forEach(palo=>VALORES.forEach(valor=>deck.push({id:palo+"-"+valor, palo, valor})));
+  return deck;
+}
+function shuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+function cardLabel(c){ return NOMBRES_VALOR[c.valor]+" de "+PALO_LABEL[c.palo]; }
+function genCode(){
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s="";
+  for(let i=0;i<5;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+function teamLabel(team, gs){
+  if(gs.numPlayers===2){
+    const p=gs.players.find(pl=>pl.team===team);
+    return p? p.name : (team==="A"?"Jugador A":"Jugador B");
+  }
+  return team==="A" ? "Equipo Claro" : "Equipo Oscuro";
+}
+
+/* ---------------- Estado de red y juego ---------------- */
+let screen = "home";          // home | lobby | game
+let peer = null;              // instancia PeerJS
+let myId = null;              // peer.id (también identifica al jugador dentro de gameState)
+let isHost = false;
+let hostFullId = null;        // "truco-XXXXX"
+let hostConn = null;          // (cliente) conexión de datos al host
+let dataConns = {};           // (host) peerId -> DataConnection
+let mediaConns = {};          // peerId -> MediaConnection (malla completa)
+let audioEls = {};            // peerId -> <audio>
+let localStream = null;
+let micMuted = true;          // arranca muteado por defecto
+let myName = "";
+let gameState = null;
+let joinErrorMsg = "";
+let copyFeedback = false;
+
+const app = document.getElementById("app");
+
+/* ---------------- Utilidades de conexión ---------------- */
+async function ensureLocalStream(){
+  if(localStream) return localStream;
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({audio:true});
+    localStream.getAudioTracks().forEach(t=> t.enabled = !micMuted);
+  }catch(e){
+    console.warn("No se pudo acceder al micrófono:", e);
+    localStream = null;
+  }
+  return localStream;
+}
+
+function attachRemoteAudio(peerId, stream){
+  let el = audioEls[peerId];
+  if(!el){
+    el = document.createElement("audio");
+    el.autoplay = true;
+    el.dataset.peer = peerId;
+    document.body.appendChild(el);
+    audioEls[peerId] = el;
+  }
+  el.srcObject = stream;
+}
+
+function setupCommonPeerHandlers(){
+  peer.on("call", async (call)=>{
+    const stream = await ensureLocalStream();
+    call.answer(stream || undefined);
+    mediaConns[call.peer] = call;
+    call.on("stream", (remoteStream)=> attachRemoteAudio(call.peer, remoteStream));
+    call.on("close", ()=>{ delete mediaConns[call.peer]; });
+  });
+  peer.on("error", (err)=>{ console.warn("Peer error:", err); });
+}
+
+// Llama (o espera ser llamado) a todos los jugadores conocidos para armar la malla de audio
+async function maintainAudioMesh(){
+  if(!gameState) return;
+  const stream = await ensureLocalStream();
+  gameState.players.forEach(p=>{
+    if(p.id === myId) return;
+    if(mediaConns[p.id]) return;
+    // Regla simple para no duplicar llamadas: el id "menor" alfabéticamente llama al "mayor"
+    if(myId < p.id){
+      const call = peer.call(p.id, stream || undefined);
+      if(call){
+        mediaConns[p.id] = call;
+        call.on("stream", (remoteStream)=> attachRemoteAudio(p.id, remoteStream));
+        call.on("close", ()=>{ delete mediaConns[p.id]; });
+      }
+    }
+  });
+}
+
+function broadcastState(){
+  Object.values(dataConns).forEach(conn=>{
+    try{ conn.send({type:"state", state: gameState}); }catch(e){}
+  });
+  render();
+  maintainAudioMesh();
+}
+
+/* ---------------- Lógica de juego (solo corre en el host) ---------------- */
+function applyAction(senderId, action){
+  if(!isHost) return;
+  const gs = gameState;
+  switch(action.type){
+    case "join": {
+      if(gs.players.some(p=>p.id===senderId)) break;
+      if(gs.players.length >= gs.numPlayers) break;
+      const seat = gs.players.length;
+      const team = gs.numPlayers===2 ? (seat===0?"A":"B") : (seat%2===0?"A":"B");
+      gs.players.push({id:senderId, name:action.name, seat, team});
+      gs.log.push({text: action.name+" se unió a la partida"});
+      break;
+    }
+    case "startGame": {
+      if(senderId !== gs.hostId) break;
+      if(gs.players.length !== gs.numPlayers) break;
+      const deck = shuffle(buildDeck());
+      const hands = {};
+      gs.players.forEach(p=>{ hands[p.id] = deck.splice(0,3); });
+      const turnOrder = [...gs.players].sort((a,b)=>a.seat-b.seat).map(p=>p.id);
+      gs.phase = "playing";
+      gs.deck = deck; gs.hands = hands; gs.table=[]; gs.trickHistory=[];
+      gs.turnOrder = turnOrder; gs.dealerIndex = 0;
+      gs.currentTurnIndex = (0+1) % turnOrder.length;
+      gs.trick = 1;
+      gs.log.push({text:"¡Comenzó la partida! Se repartieron las cartas."});
+      break;
+    }
+    case "playCard": {
+      if(gs.phase !== "playing") break;
+      const turnPlayer = gs.turnOrder[gs.currentTurnIndex];
+      if(turnPlayer !== senderId) break;
+      const hand = gs.hands[senderId] || [];
+      const card = hand.splice(action.cardIdx,1)[0];
+      if(!card) break;
+      const me = gs.players.find(p=>p.id===senderId);
+      gs.table.push({playerId:senderId, name: me?me.name:"?", card});
+      gs.log.push({text:(me?me.name:"Alguien")+" jugó "+cardLabel(card)});
+      gs.currentTurnIndex = (gs.currentTurnIndex+1) % gs.turnOrder.length;
+      if(gs.table.length === gs.turnOrder.length){
+        gs.trickHistory.push(gs.table);
+        gs.table = [];
+        if(gs.trick >= 3){
+          gs.phase = "handEnded";
+          gs.log.push({text:"Terminó la mano. El anfitrión define los tantos y reparte de nuevo."});
+        } else {
+          gs.trick += 1;
+        }
+      }
+      break;
+    }
+    case "newHand": {
+      if(senderId !== gs.hostId) break;
+      const deck = shuffle(buildDeck());
+      const hands = {};
+      gs.players.forEach(p=>{ hands[p.id] = deck.splice(0,3); });
+      gs.dealerIndex = (gs.dealerIndex+1) % gs.turnOrder.length;
+      gs.currentTurnIndex = (gs.dealerIndex+1) % gs.turnOrder.length;
+      gs.phase="playing"; gs.deck=deck; gs.hands=hands; gs.table=[]; gs.trickHistory=[]; gs.trick=1;
+      gs.log.push({text:"Nueva mano repartida."});
+      break;
+    }
+    case "canto": {
+      const me = gs.players.find(p=>p.id===senderId);
+      gs.log.push({text:(me?me.name:"Alguien")+" cantó: "+action.text});
+      break;
+    }
+    case "score": {
+      if(senderId !== gs.hostId) break;
+      gs.scores[action.team] = Math.max(0, gs.scores[action.team]+action.delta);
+      gs.log.push({text:"El anfitrión sumó "+action.delta+" tanto(s) a "+teamLabel(action.team, gs)});
+      break;
+    }
+    case "mute": {
+      gs.muted[senderId] = action.muted;
+      break;
+    }
+    case "leave": {
+      gs.players = gs.players.filter(p=>p.id!==senderId);
+      if(gs.turnOrder) gs.turnOrder = gs.turnOrder.filter(id=>id!==senderId);
+      gs.log.push({text:"Un jugador se desconectó."});
+      break;
+    }
+  }
+}
+
+function sendAction(action){
+  if(isHost){
+    applyAction(myId, action);
+    broadcastState();
+  } else if(hostConn){
+    hostConn.send(action);
+  }
+}
+
+/* ---------------- Crear / unirse a sala ---------------- */
+async function crearPartida(name, numPlayers){
+  myName = name;
+  const code = genCode();
+  hostFullId = "truco-"+code;
+  peer = new Peer(hostFullId);
+  peer.on("open", (id)=>{
+    myId = id;
+    isHost = true;
+    gameState = {
+      code, hostId:id, numPlayers, phase:"lobby",
+      players:[{id, name, seat:0, team:"A"}],
+      deck:[], hands:{}, table:[], trickHistory:[],
+      turnOrder:[], currentTurnIndex:0, dealerIndex:0, trick:1,
+      scores:{A:0,B:0}, log:[{text:name+" creó la partida"}], muted:{}
+    };
+    setupCommonPeerHandlers();
+    peer.on("connection", (conn)=>{
+      dataConns[conn.peer] = conn;
+      conn.on("data", (data)=>{ applyAction(conn.peer, data); broadcastState(); });
+      conn.on("close", ()=>{ delete dataConns[conn.peer]; applyAction(conn.peer, {type:"leave"}); broadcastState(); });
+    });
+    screen = "lobby";
+    ensureLocalStream();
+    render();
+  });
+}
+
+async function unirsePartida(name, code){
+  myName = name;
+  joinErrorMsg = "";
+  hostFullId = "truco-"+code.trim().toUpperCase();
+  peer = new Peer();
+  peer.on("open", (id)=>{
+    myId = id;
+    isHost = false;
+    setupCommonPeerHandlers();
+    hostConn = peer.connect(hostFullId, {reliable:true});
+    hostConn.on("open", ()=>{
+      hostConn.send({type:"join", name});
+    });
+    hostConn.on("data", (data)=>{
+      if(data.type==="state"){
+        gameState = data.state;
+        if(gameState.phase==="lobby") screen="lobby";
+        else screen="game";
+        render();
+        maintainAudioMesh();
+      }
+    });
+    hostConn.on("close", ()=>{
+      joinErrorMsg = "Se perdió la conexión con el anfitrión.";
+      render();
+    });
+    hostConn.on("error", ()=>{
+      joinErrorMsg = "No se pudo conectar con esa partida. Revisá el código.";
+      render();
+    });
+    ensureLocalStream();
+  });
+  peer.on("error", (err)=>{
+    joinErrorMsg = "No se encontró una partida con ese código.";
+    render();
+  });
+}
+
+/* ---------------- Render ---------------- */
+function render(){
+  if(screen==="home") return renderHome();
+  if(!gameState) return app.innerHTML = '<p class="loading">Cargando la mesa…</p>';
+  if(screen==="lobby") return renderLobby();
+  return renderGame();
+}
+
+function renderHome(){
+  const params = new URLSearchParams(location.search);
+  const prefillCode = params.get("code") || "";
+  app.innerHTML = `
+    <div class="center-screen">
+      <div class="panel">
+        <h1>Truco</h1>
+        <p class="subtitle">Armá una mesa o unite con un código</p>
+        <label class="field-label">Tu nombre</label>
+        <input class="field" id="nameInput" placeholder="¿Cómo te llamamos?" />
+
+        <label class="field-label">Crear partida — jugadores</label>
+        <div class="num-choice" id="numChoice">
+          <button data-n="2">2</button>
+          <button data-n="4" class="active">4</button>
+          <button data-n="6">6</button>
+        </div>
+        <button class="btn-gold" id="createBtn">Crear partida</button>
+
+        <div class="divider"><div class="line"></div><span>o unite a una</span><div class="line"></div></div>
+        <label class="field-label">Código de la partida</label>
+        <input class="field" id="codeInput" style="text-transform:uppercase; letter-spacing:2px;" placeholder="Ej: 7K2QW" value="${prefillCode}" />
+        ${joinErrorMsg ? `<p class="error-text">${joinErrorMsg}</p>` : ""}
+        <button class="btn-outline" id="joinBtn">Unirme a la partida</button>
+      </div>
+    </div>`;
+
+  let numPlayers = 4;
+  document.querySelectorAll("#numChoice button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      numPlayers = parseInt(btn.dataset.n,10);
+      document.querySelectorAll("#numChoice button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+  document.getElementById("createBtn").addEventListener("click", ()=>{
+    const name = document.getElementById("nameInput").value.trim();
+    if(!name) return;
+    crearPartida(name, numPlayers);
+  });
+  document.getElementById("joinBtn").addEventListener("click", ()=>{
+    const name = document.getElementById("nameInput").value.trim();
+    const code = document.getElementById("codeInput").value.trim();
+    if(!name || !code) return;
+    unirsePartida(name, code);
+  });
+}
+
+function renderLobby(){
+  const gs = gameState;
+  const shareUrl = location.origin + location.pathname + "?code=" + gs.code;
+  app.innerHTML = `
+    <div class="center-screen">
+      <div class="panel">
+        <h2>Sala de espera</h2>
+        <div class="code-row">
+          <span class="code-chip">${gs.code}</span>
+          <button class="copy-btn" id="copyBtn">${copyFeedback?"✓":"⧉"}</button>
+        </div>
+        <p class="hint">Compartí este código o el link — cualquiera que lo tenga puede unirse a esta partida.</p>
+        <p class="hint" style="word-break:break-all;">${shareUrl}</p>
+        <h3 style="font-size:14px; margin-bottom:8px;">Jugadores (${gs.players.length}/${gs.numPlayers})</h3>
+        <ul class="player-list">
+          ${gs.players.map(p=>`
+            <li style="background:${p.team==="A"?"#2E86AB22":"#C1443C22"}; color:var(--felt);">
+              <span>${p.id===gs.hostId?"👑 ":""}${p.name}${p.id===myId?" (vos)":""}</span>
+              ${gs.numPlayers!==2 ? `<span class="team-badge" style="background:${p.team==="A"?"var(--teamA)":"var(--teamB)"}">${p.team==="A"?"Claro":"Oscuro"}</span>` : ""}
+            </li>`).join("")}
+        </ul>
+        ${isHost
+          ? `<button class="btn-gold" id="startBtn" ${gs.players.length!==gs.numPlayers?"disabled":""} style="opacity:${gs.players.length!==gs.numPlayers?0.5:1}">
+               ${gs.players.length===gs.numPlayers ? "Iniciar partida" : "Esperando "+(gs.numPlayers-gs.players.length)+" jugador(es) más"}
+             </button>`
+          : `<p class="hint">Esperando a que el anfitrión inicie la partida…</p>`}
+      </div>
+    </div>`;
+
+  document.getElementById("copyBtn").addEventListener("click", ()=>{
+    navigator.clipboard.writeText(shareUrl).then(()=>{ copyFeedback=true; render(); setTimeout(()=>{copyFeedback=false; render();},1500); }).catch(()=>{});
+  });
+  if(isHost){
+    const startBtn = document.getElementById("startBtn");
+    if(startBtn) startBtn.addEventListener("click", ()=> sendAction({type:"startGame"}));
+  }
+}
+
+function cardHtml(card, {playable, small}={}){
+  return `<div class="card card-${card.palo} ${playable?"playable":"disabled"}" data-cardid="${card.id}">
+      <span class="emoji">${PALO_EMOJI[card.palo]}</span>
+      <span class="val">${NOMBRES_VALOR[card.valor]}</span>
+    </div>`;
+}
+
+function renderGame(){
+  const gs = gameState;
+  const isMyTurn = gs.turnOrder && gs.turnOrder[gs.currentTurnIndex] === myId;
+  const myHand = gs.hands[myId] || [];
+  const iAmMuted = !!gs.muted[myId];
+
+  app.innerHTML = `
+    <div class="game-wrap">
+      <div class="topbar">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="code-chip" style="font-size:13px; padding:4px 10px;">${gs.code}</span>
+        </div>
+        <div style="display:flex; gap:18px; flex-wrap:wrap;">
+          ${["A","B"].map(team=>`
+            <div class="score-block">
+              <span class="team-badge" style="background:${team==="A"?"var(--teamA)":"var(--teamB)"}">${teamLabel(team,gs)}</span>
+              <span class="score-value">${gs.scores[team]}</span>
+              ${isHost ? `<span class="score-btns">
+                  ${[1,2,3,4].map(d=>`<button data-team="${team}" data-delta="${d}">+${d}</button>`).join("")}
+                  <button class="neg" data-team="${team}" data-delta="-1">-1</button>
+                </span>` : ""}
+            </div>`).join("")}
+        </div>
+        <button class="mic-btn ${iAmMuted?"mic-off":"mic-on"}" id="micBtn">${iAmMuted?"🔇 Mic apagado":"🎙️ Mic prendido"}</button>
+      </div>
+
+      <div class="main-area">
+        <div class="table-area">
+          <div class="seats">
+            ${gs.players.map(p=>{
+              const active = gs.turnOrder && gs.turnOrder[gs.currentTurnIndex]===p.id;
+              return `<div class="seat-chip ${active?"seat-active":"seat-idle"}">
+                ${p.id===gs.hostId?"👑 ":""}${p.name}${gs.muted[p.id]?" 🔇":""}${active?" • jugando":""}
+              </div>`;
+            }).join("")}
+          </div>
+
+          <p style="font-size:12px; color:rgba(243,233,210,.7);">
+            ${gs.phase==="handEnded" ? "Mano terminada" : "Mano en curso — baza "+gs.trick+" de 3"}
+          </p>
+
+          <div class="mesa">
+            ${gs.table.length===0 && gs.phase==="playing" ? `<p style="font-size:13px; color:rgba(243,233,210,.4);">Esperando la primera carta de esta baza…</p>` : ""}
+            ${gs.table.map(t=>`
+              <div style="display:flex; flex-direction:column; align-items:center;">
+                ${cardHtml(t.card,{playable:false})}
+                <span class="table-card-name">${t.name}</span>
+              </div>`).join("")}
+          </div>
+
+          ${gs.phase==="handEnded" && isHost ? `<button class="new-hand-btn" id="newHandBtn">🔄 Repartir nueva mano</button>` : ""}
+          ${gs.phase==="handEnded" && !isHost ? `<p style="font-size:13px;">Esperando a que el anfitrión reparta la próxima mano…</p>` : ""}
+
+          <div class="cantos">
+            ${CANTOS.map(c=>`<button class="canto-btn" data-canto="${c}" ${gs.phase!=="playing"?"disabled":""}>${c}</button>`).join("")}
+          </div>
+
+          <div class="hand">
+            ${myHand.map((c,idx)=>`<div data-idx="${idx}">${cardHtml(c,{playable: isMyTurn && gs.phase==="playing"})}</div>`).join("")}
+          </div>
+          ${myHand.length===0 && gs.phase==="playing" ? `<p style="font-size:12px; color:rgba(243,233,210,.4);">Ya jugaste tus cartas en esta mano.</p>` : ""}
+          <p class="turn-note" style="color:${isMyTurn?"var(--gold)":"rgba(243,233,210,.4)"}">
+            ${isMyTurn ? "¡Es tu turno!" : "Esperando el turno de otro jugador…"}
+          </p>
+        </div>
+
+        <div class="log-panel">
+          <h3>Mesa de juego</h3>
+          <div class="log-list">
+            ${[...gs.log].reverse().slice(0,40).map(l=>`<p>${l.text}</p>`).join("")}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById("micBtn").addEventListener("click", async ()=>{
+    micMuted = !micMuted;
+    if(localStream) localStream.getAudioTracks().forEach(t=> t.enabled = !micMuted);
+    sendAction({type:"mute", muted: micMuted});
+  });
+  if(isHost){
+    document.querySelectorAll(".score-btns button").forEach(btn=>{
+      btn.addEventListener("click", ()=> sendAction({type:"score", team:btn.dataset.team, delta:parseInt(btn.dataset.delta,10)}));
+    });
+    const newHandBtn = document.getElementById("newHandBtn");
+    if(newHandBtn) newHandBtn.addEventListener("click", ()=> sendAction({type:"newHand"}));
+  }
+  document.querySelectorAll(".canto-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> sendAction({type:"canto", text:btn.dataset.canto}));
+  });
+  document.querySelectorAll(".hand [data-idx]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      if(!isMyTurn || gs.phase!=="playing") return;
+      sendAction({type:"playCard", cardIdx: parseInt(el.dataset.idx,10)});
+    });
+  });
+}
+
+render();
+</script>
+</body>
+</html>
