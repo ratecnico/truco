@@ -73,15 +73,21 @@
   .seat-active{background:var(--gold); color:var(--ink);}
   .seat-idle{background:rgba(243,233,210,.15); color:var(--cream);}
   .mesa{display:flex; flex-wrap:wrap; gap:14px; justify-content:center; align-items:center; min-height:110px;}
-  .card{width:70px; height:98px; border-radius:10px; border:2px solid var(--cream); display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(0,0,0,.3); transition:transform .15s;}
-  .card.playable:hover{transform:translateY(-6px); cursor:pointer;}
+  .card{width:76px; height:108px; border-radius:12px; border:1px solid rgba(255,255,255,.55);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow:0 10px 20px rgba(0,0,0,.4), inset 0 0 0 3px rgba(255,255,255,.12);
+    transition:transform .15s, box-shadow .15s; position:relative; overflow:hidden;}
+  .card.playable:hover{transform:translateY(-8px); cursor:pointer; box-shadow:0 16px 26px rgba(0,0,0,.5), inset 0 0 0 3px rgba(255,255,255,.18);}
   .card.disabled{opacity:.55;}
-  .card .emoji{font-size:22px;}
-  .card .val{font-family:'Playfair Display',serif; font-weight:700; font-size:14px;}
-  .card-espada{background:#3B4A5A; color:#F3E9D2;}
-  .card-basto{background:#5C3A21; color:#F3E9D2;}
-  .card-oro{background:#C9A227; color:#2A1E0A;}
-  .card-copa{background:#8B2E2E; color:#F3E9D2;}
+  .card .emoji{font-size:30px; filter:drop-shadow(0 2px 2px rgba(0,0,0,.3)); margin-bottom:2px;}
+  .card .val{font-family:'Playfair Display',serif; font-weight:700; font-size:15px; letter-spacing:.5px;}
+  .card .corner{position:absolute; font-family:'Playfair Display',serif; font-weight:700; font-size:11px; line-height:1; opacity:.85;}
+  .card .corner.top-left{top:7px; left:8px;}
+  .card .corner.bottom-right{bottom:7px; right:8px; transform:rotate(180deg);}
+  .card-espada{background:linear-gradient(160deg, #56728C 0%, #2B3A4A 100%); color:#F3E9D2;}
+  .card-basto{background:linear-gradient(160deg, #8A5D36 0%, #3E2712 100%); color:#F3E9D2;}
+  .card-oro{background:linear-gradient(160deg, #F0D268 0%, #B8842A 100%); color:#2A1E0A;}
+  .card-copa{background:linear-gradient(160deg, #C2504F 0%, #5E1D1D 100%); color:#F3E9D2;}
   .table-card-name{font-size:10px; color:var(--cream); margin-top:2px; text-align:center;}
   .cantos{display:flex; flex-wrap:wrap; justify-content:center; gap:8px;}
   .canto-btn{padding:6px 12px; border-radius:999px; font-size:12px; font-weight:600; background:transparent; border:2px solid var(--cream); color:var(--cream);}
@@ -465,9 +471,12 @@ function renderLobby(){
 }
 
 function cardHtml(card, {playable, small}={}){
+  const short = card.valor===1?"A": card.valor===10?"S": card.valor===11?"C": card.valor===12?"R": String(card.valor);
   return `<div class="card card-${card.palo} ${playable?"playable":"disabled"}" data-cardid="${card.id}">
+      <span class="corner top-left">${short}</span>
       <span class="emoji">${PALO_EMOJI[card.palo]}</span>
       <span class="val">${NOMBRES_VALOR[card.valor]}</span>
+      <span class="corner bottom-right">${short}</span>
     </div>`;
 }
 
