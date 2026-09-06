@@ -132,6 +132,20 @@ function teamLabel(team, gs){
   return team==="A" ? "Equipo Claro" : "Equipo Oscuro";
 }
 
+/* ---------------- Configuración de red (STUN/TURN) ---------------- */
+// STUN: ayuda a que dos navegadores se encuentren directo (funciona en la mayoría de las redes).
+// TURN: respaldo para redes más restrictivas (WiFis corporativas, universidades, 4G/5G) donde
+// la conexión directa no alcanza. Las de abajo son credenciales PÚBLICAS y gratuitas de OpenRelay,
+// pensadas para pruebas: sirven para arrancar ya mismo, pero son compartidas con cualquiera que
+// use este mismo servicio, así que pueden fallar si están saturadas. Si más adelante querés algo
+// más confiable solo para tu juego, más abajo te explico cómo sacar tus propias credenciales gratis.
+const ICE_SERVERS = [
+  { urls: "stun:stun.relay.metered.ca:80" },
+  { urls: "turn:global.relay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:global.relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+  { urls: "turn:global.relay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+];
+
 /* ---------------- Estado de red y juego ---------------- */
 let peer = null;              // instancia PeerJS
 let myId = null;              // peer.id (también identifica al jugador dentro de gameState)
@@ -313,7 +327,7 @@ async function crearPartida(name, numPlayers){
   myName = name;
   const code = genCode();
   hostFullId = "truco-"+code;
-  peer = new Peer(hostFullId);
+  peer = new Peer(hostFullId, { config: { iceServers: ICE_SERVERS } });
   peer.on("open", (id)=>{
     myId = id;
     isHost = true;
@@ -339,7 +353,7 @@ async function unirsePartida(name, code){
   myName = name;
   joinErrorMsg = "";
   hostFullId = "truco-"+code.trim().toUpperCase();
-  peer = new Peer();
+  peer = new Peer({ config: { iceServers: ICE_SERVERS } });
   peer.on("open", (id)=>{
     myId = id;
     isHost = false;
