@@ -132,6 +132,59 @@ function teamLabel(team, gs){
   return team==="A" ? "Equipo Claro" : "Equipo Oscuro";
 }
 
+/* ---------------- Motor de reglas (modo contra la máquina) ---------------- */
+const TRUCO_RANK = {
+  "espada-1":14, "basto-1":13, "espada-7":12, "oro-7":11,
+  "espada-3":10,"basto-3":10,"oro-3":10,"copa-3":10,
+  "espada-2":9,"basto-2":9,"oro-2":9,"copa-2":9,
+  "oro-1":8,"copa-1":8,
+  "espada-12":7,"basto-12":7,"oro-12":7,"copa-12":7,
+  "espada-11":6,"basto-11":6,"oro-11":6,"copa-11":6,
+  "espada-10":5,"basto-10":5,"oro-10":5,"copa-10":5,
+  "basto-7":4,"copa-7":4,
+  "espada-6":3,"basto-6":3,"oro-6":3,"copa-6":3,
+  "espada-5":2,"basto-5":2,"oro-5":2,"copa-5":2,
+  "espada-4":1,"basto-4":1,"oro-4":1,"copa-4":1
+};
+function trucoRank(card){ return TRUCO_RANK[card.palo+"-"+card.valor]; }
+function envidoFace(card){ return card.valor>=10 ? 0 : card.valor; }
+function envidoValue(hand){
+  const bySuit = {};
+  hand.forEach(c=>{ (bySuit[c.palo]=bySuit[c.palo]||[]).push(c); });
+  let best = 0;
+  Object.values(bySuit).forEach(cards=>{
+    if(cards.length>=2){
+      const vals = cards.map(envidoFace).sort((a,b)=>b-a);
+      const sum = vals[0]+vals[1]+20;
+      if(sum>best) best = sum;
+    }
+  });
+  if(best===0) best = Math.max(...hand.map(envidoFace));
+  return best;
+}
+function isFlor(hand){ return hand[0].palo===hand[1].palo && hand[1].palo===hand[2].palo; }
+function florValue(hand){ return hand.reduce((s,c)=>s+envidoFace(c),0) + 20; }
+// Decide quién ganó la mano según las bazas jugadas (con reglas de "parda").
+function resolveHandWinner(trickResults, manoSide){
+  const wins = {player:0, bot:0};
+  for(let i=0;i<trickResults.length;i++){
+    const r = trickResults[i];
+    if(r!=="tie") wins[r]++;
+    if(wins.player>=2) return "player";
+    if(wins.bot>=2) return "bot";
+    if(i===1){
+      if(trickResults[0]==="tie" && r!=="tie") return r;
+      if(trickResults[0]!=="tie" && r==="tie") return trickResults[0];
+    }
+  }
+  if(trickResults.length===3){
+    const r3 = trickResults[2];
+    if(r3==="tie") return manoSide;
+    return r3;
+  }
+  return null;
+}
+
 /* ---------------- Configuración de red (STUN/TURN) ---------------- */
 // STUN: ayuda a que dos navegadores se encuentren directo (funciona en la mayoría de las redes).
 // TURN: respaldo para redes más restrictivas (WiFis corporativas, universidades, 4G/5G) donde
@@ -161,6 +214,8 @@ let myName = "";
 let gameState = null;
 let joinErrorMsg = "";
 let copyFeedback = false;
+let botSetupVisible = false;   // true cuando se muestra el panel de configuración del bot
+let bot = null;                // estado completo de la partida contra la máquina (null = no está activa)
 
 const app = document.getElementById("app");
 
@@ -322,6 +377,209 @@ function sendAction(action){
   }
 }
 
+/* ---------------- Lógica del modo contra la máquina ---------------- */
+function newBotMatch(playerName, withFlor, target){
+  bot = {
+    playerName, withFlor, target,
+    scores:{player:0, bot:0},
+    manoSide:"player",
+    matchOver:false, winner:null
+  };
+  dealBotHand();
+}
+
+function dealBotHand(){
+  const deck = shuffle(buildDeck());
+  bot.playerHand = deck.splice(0,3);
+  bot.botHand = deck.splice(0,3);
+  bot.table = [];
+  bot.trick = 1;
+  bot.trickResults = [];
+  bot.trickLeader = bot.manoSide;
+  bot.turn = bot.manoSide;
+  bot.envido = { chain:[], resolved:false };
+  bot.truco = { level:0, pendingType:null, accepted:false };
+  bot.flor = { playerHas:isFlor(bot.playerHand), botHas:isFlor(bot.botHand), resolved:false };
+  bot.handOver = false;
+  bot.log = [{text:"Nueva mano. "+(bot.manoSide==="player"?bot.playerName:"La máquina")+" es mano."}];
+  if(bot.withFlor && (bot.flor.playerHas || bot.flor.botHas)) resolveFlorAuto();
+  render();
+  if(bot.turn==="bot" && !bot.handOver) setTimeout(botTakeTurn, 700);
+}
+
+function resolveFlorAuto(){
+  const pv = bot.flor.playerHas ? florValue(bot.playerHand) : -1;
+  const bv = bot.flor.botHas ? florValue(bot.botHand) : -1;
+  if(bot.flor.playerHas && bot.flor.botHas){
+    if(pv>=bv){ bot.scores.player+=4; bot.log.push({text:"¡Ambos tienen flor! Ganás vos: +4 puntos."}); }
+    else { bot.scores.bot+=4; bot.log.push({text:"¡Ambos tienen flor! Gana la máquina: +4 puntos."}); }
+  } else if(bot.flor.playerHas){
+    bot.scores.player+=3; bot.log.push({text:"¡Tenés flor! +3 puntos automáticos."});
+  } else {
+    bot.scores.bot+=3; bot.log.push({text:"La máquina tiene flor: +3 puntos para ella."});
+  }
+  bot.flor.resolved = true;
+  bot.envido.resolved = true;
+  checkMatchOver();
+}
+
+function envidoAllowed(){
+  return !bot.handOver && !bot.envido.resolved && !bot.flor.resolved && !bot.envido.pendingRaise && bot.truco.level===0 && !bot.truco.pendingType
+    && bot.trick===1 && bot.table.filter(t=>t.trick===1).length<2;
+}
+function trucoAllowed(kind){
+  if(bot.handOver || bot.truco.pendingType) return false;
+  if(kind==="truco") return bot.truco.level===0;
+  if(kind==="retruco") return bot.truco.level===1 && bot.truco.accepted;
+  if(kind==="valecuatro") return bot.truco.level===2 && bot.truco.accepted;
+  return false;
+}
+
+function envidoChainValue(chain){
+  if(chain.includes("falta")) return Math.max(1, bot.target - Math.max(bot.scores.player, bot.scores.bot));
+  let total=0;
+  chain.forEach(c=>{ if(c==="envido") total+=2; else if(c==="real") total+=3; });
+  return total;
+}
+function cantarEnvido(tipo){
+  if(!envidoAllowed()) return;
+  bot.envido.chain.push(tipo);
+  bot.log.push({text:bot.playerName+" cantó "+(tipo==="envido"?"Envido":tipo==="real"?"Real envido":"Falta envido")});
+  botRespondEnvido();
+}
+function botRespondEnvido(){
+  const bv = envidoValue(bot.botHand);
+  const chain = bot.envido.chain;
+  const stakes = envidoChainValue(chain);
+  const threshold = chain.includes("falta") ? 29 : (chain.length>=2 ? 27 : 24);
+  const canRaise = !chain.includes("falta") && bv>=30;
+  if(canRaise && Math.random()<0.5){
+    const next = chain.includes("real") ? "falta" : "real";
+    bot.envido.chain.push(next);
+    bot.envido.pendingRaise = true;
+    bot.log.push({text:"La máquina sube: "+(next==="real"?"Real envido":"Falta envido")});
+    render();
+    return;
+  }
+  resolveEnvido(bv>=threshold);
+}
+function resolveEnvido(accepted){
+  if(!accepted){
+    bot.scores.player += 1;
+    bot.log.push({text:"La máquina no quiere el envido. +1 para vos."});
+  } else {
+    const value = envidoChainValue(bot.envido.chain);
+    const pv = envidoValue(bot.playerHand), bv = envidoValue(bot.botHand);
+    bot.log.push({text:"Envido: vos "+pv+" — máquina "+bv});
+    if(pv>=bv){ bot.scores.player+=value; bot.log.push({text:"Ganás el envido: +"+value}); }
+    else { bot.scores.bot+=value; bot.log.push({text:"Gana el envido la máquina: +"+value}); }
+  }
+  bot.envido.resolved = true;
+  bot.envido.pendingRaise = false;
+  checkMatchOver();
+  render();
+}
+function envidoQuiero(){ resolveEnvido(true); }
+function envidoNoQuiero(){ resolveEnvido(false); }
+
+function cantarTruco(kind){
+  if(!trucoAllowed(kind)) return;
+  bot.truco.pendingType = kind;
+  const label = kind==="truco"?"Truco":kind==="retruco"?"Retruco":"Vale cuatro";
+  bot.log.push({text:bot.playerName+" cantó "+label});
+  botRespondTruco();
+}
+function botRespondTruco(){
+  const remaining = bot.botHand.map(trucoRank);
+  const avg = remaining.length ? remaining.reduce((a,b)=>a+b,0)/remaining.length : 0;
+  const kind = bot.truco.pendingType;
+  const threshold = {truco:6, retruco:8, valecuatro:9}[kind];
+  const levelValue = {truco:1, retruco:2, valecuatro:3}[kind];
+  if(avg>=threshold){
+    bot.truco.level = levelValue;
+    bot.truco.accepted = true;
+    bot.truco.pendingType = null;
+    bot.log.push({text:"La máquina quiere el "+(kind==="truco"?"truco":kind==="retruco"?"retruco":"vale cuatro")+"."});
+  } else {
+    const prevValue = {truco:1, retruco:2, valecuatro:3}[kind];
+    bot.scores.player += prevValue;
+    bot.log.push({text:"La máquina no quiere. +"+prevValue+" para vos."});
+    bot.truco.pendingType = null;
+    bot.handOver = true;
+    checkMatchOver();
+  }
+  render();
+}
+
+function checkMatchOver(){
+  if(bot.scores.player>=bot.target){ bot.matchOver=true; bot.winner="player"; bot.log.push({text:"¡Ganaste la partida! 🎉"}); }
+  else if(bot.scores.bot>=bot.target){ bot.matchOver=true; bot.winner="bot"; bot.log.push({text:"La máquina ganó la partida."}); }
+}
+
+function endBotHand(winnerSide){
+  const value = bot.truco.level===0 ? 1 : (bot.truco.level===1?2:bot.truco.level===2?3:4);
+  bot.scores[winnerSide]+=value;
+  bot.log.push({text:(winnerSide==="player"?bot.playerName:"La máquina")+" gana la mano: +"+value+" punto(s)."});
+  bot.handOver = true;
+  checkMatchOver();
+}
+
+function botPlayerPlayCard(idx){
+  if(!bot || bot.handOver || bot.matchOver) return;
+  if(bot.turn!=="player") return;
+  const card = bot.playerHand.splice(idx,1)[0];
+  if(!card) return;
+  bot.table.push({side:"player", card, trick:bot.trick});
+  bot.log.push({text:bot.playerName+" jugó "+cardLabel(card)});
+  advanceBotTrick();
+}
+function botTakeTurn(){
+  if(!bot || bot.handOver || bot.matchOver) return;
+  const hand = bot.botHand;
+  const playedThisTrick = bot.table.filter(t=>t.trick===bot.trick);
+  let idx;
+  if(playedThisTrick.length===1){
+    const pr = trucoRank(playedThisTrick[0].card);
+    const beating = hand.map((c,i)=>({i, r:trucoRank(c)})).filter(x=>x.r>pr).sort((a,b)=>a.r-b.r);
+    idx = beating.length ? beating[0].i : hand.map((c,i)=>({i,r:trucoRank(c)})).sort((a,b)=>a.r-b.r)[0].i;
+  } else {
+    const sorted = hand.map((c,i)=>({i,r:trucoRank(c)})).sort((a,b)=>a.r-b.r);
+    idx = (bot.trick>=3 || hand.length===1) ? sorted[sorted.length-1].i : sorted[0].i;
+  }
+  const card = bot.botHand.splice(idx,1)[0];
+  bot.table.push({side:"bot", card, trick:bot.trick});
+  bot.log.push({text:"La máquina jugó "+cardLabel(card)});
+  advanceBotTrick();
+}
+function advanceBotTrick(){
+  const playedThisTrick = bot.table.filter(t=>t.trick===bot.trick);
+  if(playedThisTrick.length<2){
+    bot.turn = bot.turn==="player" ? "bot" : "player";
+    render();
+    if(bot.turn==="bot") setTimeout(botTakeTurn, 700);
+    return;
+  }
+  const pEntry = playedThisTrick.find(t=>t.side==="player");
+  const bEntry = playedThisTrick.find(t=>t.side==="bot");
+  const pr = trucoRank(pEntry.card), br = trucoRank(bEntry.card);
+  const result = pr>br ? "player" : (br>pr ? "bot" : "tie");
+  bot.trickResults.push(result);
+  bot.log.push({text:"Baza "+bot.trick+": "+(result==="tie"?"parda":(result==="player"?bot.playerName:"la máquina")+" gana la baza")});
+  const winner = resolveHandWinner(bot.trickResults, bot.manoSide);
+  if(winner){ endBotHand(winner); render(); return; }
+  if(bot.trick>=3){ endBotHand(bot.manoSide); render(); return; }
+  bot.trick += 1;
+  bot.trickLeader = result==="tie" ? bot.trickLeader : result;
+  bot.turn = bot.trickLeader;
+  render();
+  if(bot.turn==="bot") setTimeout(botTakeTurn, 700);
+}
+function botNewHand(){
+  bot.manoSide = bot.manoSide==="player" ? "bot" : "player";
+  dealBotHand();
+}
+function exitBotMatch(){ bot = null; botSetupVisible = false; render(); }
+
 /* ---------------- Crear / unirse a sala ---------------- */
 async function crearPartida(name, numPlayers){
   myName = name;
@@ -387,6 +645,8 @@ async function unirsePartida(name, code){
 
 /* ---------------- Render ---------------- */
 function render(){
+  if(bot) return renderBotGame();
+  if(botSetupVisible) return renderBotSetup();
   if(!gameState) return renderHome();
   if(gameState.phase==="lobby") return renderLobby();
   return renderGame();
@@ -416,6 +676,9 @@ function renderHome(){
         <input class="field" id="codeInput" style="text-transform:uppercase; letter-spacing:2px;" placeholder="Ej: 7K2QW" value="${prefillCode}" />
         ${joinErrorMsg ? `<p class="error-text">${joinErrorMsg}</p>` : ""}
         <button class="btn-outline" id="joinBtn">Unirme a la partida</button>
+
+        <div class="divider" style="margin-top:20px;"><div class="line"></div><span>o jugá solo</span><div class="line"></div></div>
+        <button class="btn-outline" id="botBtn">🤖 Jugar contra la máquina</button>
       </div>
     </div>`;
 
@@ -437,6 +700,13 @@ function renderHome(){
     const code = document.getElementById("codeInput").value.trim();
     if(!name || !code) return;
     unirsePartida(name, code);
+  });
+  document.getElementById("botBtn").addEventListener("click", ()=>{
+    const name = document.getElementById("nameInput").value.trim();
+    if(!name) return;
+    myName = name;
+    botSetupVisible = true;
+    render();
   });
 }
 
@@ -593,6 +863,175 @@ function renderGame(){
     el.addEventListener("click", ()=>{
       if(!isMyTurn || gs.phase!=="playing") return;
       sendAction({type:"playCard", cardIdx: parseInt(el.dataset.idx,10)});
+    });
+  });
+}
+
+/* ---------------- Render: configuración del modo bot ---------------- */
+function renderBotSetup(){
+  app.innerHTML = `
+    <div class="center-screen">
+      <div class="panel">
+        <h2>🤖 Jugar contra la máquina</h2>
+        <p class="subtitle">Vos contra "La Máquina", 1 a 1</p>
+
+        <label class="field-label">Flor</label>
+        <div class="num-choice" id="florChoice">
+          <button data-v="0" class="active">Sin flor</button>
+          <button data-v="1">Con flor</button>
+        </div>
+
+        <label class="field-label">Jugar hasta</label>
+        <div class="num-choice" id="targetChoice">
+          <button data-v="15" class="active">15 puntos</button>
+          <button data-v="30">30 puntos</button>
+        </div>
+
+        <button class="btn-gold" id="startBotBtn" style="margin-top:8px;">Empezar</button>
+        <button class="btn-outline" id="backBtn">Volver</button>
+      </div>
+    </div>`;
+
+  let withFlor = false, target = 15;
+  document.querySelectorAll("#florChoice button").forEach(b=>b.addEventListener("click", ()=>{
+    withFlor = b.dataset.v==="1";
+    document.querySelectorAll("#florChoice button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+  }));
+  document.querySelectorAll("#targetChoice button").forEach(b=>b.addEventListener("click", ()=>{
+    target = parseInt(b.dataset.v,10);
+    document.querySelectorAll("#targetChoice button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+  }));
+  document.getElementById("startBotBtn").addEventListener("click", ()=>{
+    newBotMatch(myName || "Vos", withFlor, target);
+  });
+  document.getElementById("backBtn").addEventListener("click", ()=>{
+    botSetupVisible = false;
+    render();
+  });
+}
+
+/* ---------------- Render: mesa de juego contra la máquina ---------------- */
+function renderBotGame(){
+  const isMyTurn = bot.turn==="player" && !bot.handOver && !bot.matchOver;
+  const cardsLeftBot = bot.botHand.length;
+
+  app.innerHTML = `
+    <div class="game-wrap">
+      <div class="topbar">
+        <span class="code-chip" style="font-size:13px; padding:4px 10px;">vs 🤖 La Máquina</span>
+        <div style="display:flex; gap:18px; flex-wrap:wrap;">
+          <div class="score-block">
+            <span class="team-badge" style="background:var(--teamA)">${bot.playerName}</span>
+            <span class="score-value">${bot.scores.player}</span>
+          </div>
+          <div class="score-block">
+            <span class="team-badge" style="background:var(--teamB)">La Máquina</span>
+            <span class="score-value">${bot.scores.bot}</span>
+          </div>
+        </div>
+        <span style="font-size:11px; color:rgba(243,233,210,.7);">Objetivo: ${bot.target} pts ${bot.withFlor?"· con flor":"· sin flor"}</span>
+      </div>
+
+      ${bot.matchOver ? `
+        <div class="center-screen" style="min-height:0; padding:20px;">
+          <div class="panel" style="text-align:center;">
+            <h2>${bot.winner==="player" ? "¡Ganaste la partida! 🎉" : "Ganó la máquina 🤖"}</h2>
+            <p class="subtitle">${bot.scores.player} — ${bot.scores.bot}</p>
+            <button class="btn-gold" id="rematchBtn">Jugar de nuevo</button>
+            <button class="btn-outline" id="exitBtn">Volver al inicio</button>
+          </div>
+        </div>` : `
+      <div class="main-area">
+        <div class="table-area">
+          <div class="seats">
+            <div class="seat-chip ${bot.turn==="bot"?"seat-active":"seat-idle"}" style="flex-direction:column; gap:4px; border-radius:14px; padding:8px 14px;">
+              <span>🤖 La Máquina${bot.turn==="bot"?" • jugando":""}</span>
+              <span class="seat-hand">${backHtml(true)}<span class="count">×${cardsLeftBot}</span></span>
+            </div>
+            <div class="seat-chip ${bot.turn==="player"?"seat-active":"seat-idle"}">
+              ${bot.playerName}${bot.turn==="player"?" • tu turno":""}
+            </div>
+          </div>
+
+          <p style="font-size:12px; color:rgba(243,233,210,.7);">
+            ${bot.handOver ? "Mano terminada" : "Mano en curso — baza "+bot.trick+" de 3"}
+          </p>
+
+          <div class="mesa">
+            ${bot.table.length===0 ? `<p style="font-size:13px; color:rgba(243,233,210,.4);">Esperando la primera carta…</p>` : ""}
+            ${[1,2,3].filter(n=>bot.table.some(t=>t.trick===n)).map(n=>`
+              <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                <span style="font-size:10px; color:rgba(243,233,210,.55); text-transform:uppercase; letter-spacing:1px;">Baza ${n}</span>
+                <div style="display:flex; gap:10px;">
+                  ${bot.table.filter(t=>t.trick===n).map(t=>`
+                    <div style="display:flex; flex-direction:column; align-items:center;">
+                      ${cardHtml(t.card,{playable:false})}
+                      <span class="table-card-name">${t.side==="player"?bot.playerName:"La Máquina"}</span>
+                    </div>`).join("")}
+                </div>
+              </div>`).join("")}
+          </div>
+
+          ${bot.handOver ? `<button class="new-hand-btn" id="botNewHandBtn">🔄 Repartir nueva mano</button>` : ""}
+
+          ${!bot.handOver ? `
+          <div class="cantos">
+            ${bot.envido.pendingRaise ? `
+              <span style="font-size:12px; color:var(--gold); align-self:center;">La máquina subió — ¿querés?</span>
+              <button class="canto-btn" id="cQuiero" style="border-color:var(--gold); color:var(--gold);">Quiero</button>
+              <button class="canto-btn" id="cNoQuiero">No quiero</button>
+            ` : `
+              <button class="canto-btn" id="cEnvido" ${envidoAllowed()?"":"disabled"}>Envido</button>
+              <button class="canto-btn" id="cReal" ${envidoAllowed()?"":"disabled"}>Real envido</button>
+              <button class="canto-btn" id="cFalta" ${envidoAllowed()?"":"disabled"}>Falta envido</button>
+              <button class="canto-btn" id="cTruco" ${trucoAllowed("truco")?"":"disabled"}>Truco</button>
+              <button class="canto-btn" id="cRetruco" ${trucoAllowed("retruco")?"":"disabled"}>Retruco</button>
+              <button class="canto-btn" id="cVale4" ${trucoAllowed("valecuatro")?"":"disabled"}>Vale cuatro</button>
+            `}
+          </div>` : ""}
+
+          <div class="hand">
+            ${bot.playerHand.map((c,idx)=>`<div data-idx="${idx}">${cardHtml(c,{playable: isMyTurn && !bot.handOver})}</div>`).join("")}
+          </div>
+          <p class="turn-note" style="color:${isMyTurn?"var(--gold)":"rgba(243,233,210,.4)"}">
+            ${bot.handOver ? "" : (isMyTurn ? "¡Es tu turno!" : "La máquina está pensando…")}
+          </p>
+        </div>
+
+        <div class="log-panel">
+          <h3>Mesa de juego</h3>
+          <div class="log-list">
+            ${[...bot.log].reverse().slice(0,40).map(l=>`<p>${l.text}</p>`).join("")}
+          </div>
+        </div>
+      </div>`}
+    </div>`;
+
+  if(bot.matchOver){
+    document.getElementById("rematchBtn").addEventListener("click", ()=> newBotMatch(bot.playerName, bot.withFlor, bot.target));
+    document.getElementById("exitBtn").addEventListener("click", exitBotMatch);
+    return;
+  }
+  if(bot.handOver){
+    const btn = document.getElementById("botNewHandBtn");
+    if(btn) btn.addEventListener("click", botNewHand);
+    return;
+  }
+  const bind = (id, fn)=>{ const el=document.getElementById(id); if(el) el.addEventListener("click", fn); };
+  bind("cEnvido", ()=>cantarEnvido("envido"));
+  bind("cReal", ()=>cantarEnvido("real"));
+  bind("cFalta", ()=>cantarEnvido("falta"));
+  bind("cTruco", ()=>cantarTruco("truco"));
+  bind("cRetruco", ()=>cantarTruco("retruco"));
+  bind("cVale4", ()=>cantarTruco("valecuatro"));
+  bind("cQuiero", envidoQuiero);
+  bind("cNoQuiero", envidoNoQuiero);
+  document.querySelectorAll(".hand [data-idx]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      if(!isMyTurn) return;
+      botPlayerPlayCard(parseInt(el.dataset.idx,10));
     });
   });
 }
